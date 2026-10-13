@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass, field
 
 from .config import settings
+from .gloss import literal_en
 from .index import Hit, hybrid_search
 from .translate import translate
 
@@ -59,18 +60,18 @@ def _synthesize_openai(query: str, hits: list[Hit]) -> str:
 
 
 def _synthesize_echo(query: str, hits: list[Hit]) -> str:
-    """Offline extractive answer: tell the user what the top Chinese sources say, verbatim+gloss."""
+    """Offline extractive answer: tell the user what the top Chinese sources say,
+    verbatim + English gloss (dictionary-based, no API key needed)."""
     if not hits:
         return (f"No indexed Chinese sources matched “{query}”. Try broader terms, "
                 "or ingest more pages.")
     lines = [f"Top Chinese sources found for “{query}” (extractive preview — set "
              "SINO_LLM_PROVIDER=openai for a synthesized English answer):"]
     for i, h in enumerate(hits, 1):
-        gloss = translate(h.text, "en") if settings.translate_provider != "noop" else ""
         spans = _zh_spans(h.text)
         snippet = " … ".join(spans) if spans else h.text[:160]
-        note = f" — likely meaning: “{gloss}”" if gloss and gloss != h.text else ""
-        lines.append(f"[{i}] {snippet}{note}")
+        en = literal_en(snippet, 220)
+        lines.append(f"[{i}] {snippet}\n     English: {en}")
     return "\n\n".join(lines)
 
 
@@ -78,16 +79,8 @@ def answer_query(query: str, top_k: int | None = None) -> Answer:
     """Full loop: EN->ZH query translation -> hybrid search -> synthesis with citations."""
     query_zh = translate(query, "zh")
     hits = hybrid_search(query_zh, final_k=top_k)
-    citations = [{
-        "n": i,
-        "title": h.title,
-        "url": h.url,
-        "domain": h.domain,
-        "source": h.source_name,
-        "snippet_zh": h.text[:300],
-        "score": round(h.score, 5),
-        "lane": h.lane,
-    } for i, h in enumerate(hits, 1)]
+    from .bilingual import decorate          # avoid circular import at module load
+    citations = decorate(hits)
 
     if settings.llm_provider == "openai" and settings.openai_api_key:
         text, mode = _synthesize_openai(query, hits), "openai"

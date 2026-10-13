@@ -49,6 +49,25 @@ CREATE TABLE IF NOT EXISTS crawl_queue (
     error      TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Cached English translations of Chinese chunk text (MT provider result or
+-- offline gloss fallback) so we translate each snippet only once.
+CREATE TABLE IF NOT EXISTS chunk_translations (
+    chunk_id   INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+    en         TEXT NOT NULL,
+    provider   TEXT NOT NULL DEFAULT 'gloss',   -- gloss | openai | deepl ...
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Saved user searches: powers the "popular / trending" strip in the UI and
+-- gives a hint of what people actually look up (research + casual mix).
+CREATE TABLE IF NOT EXISTS search_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    q          TEXT NOT NULL,
+    mode       TEXT NOT NULL DEFAULT 'search',  -- search | answer
+    results    INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -164,3 +183,40 @@ def chunk_with_doc(conn: sqlite3.Connection, chunk_id: int):
            FROM chunks c JOIN docs d ON d.id = c.doc_id WHERE c.id = ?""",
         (chunk_id,),
     ).fetchone()
+
+
+# ---------------------------------------------------------------------------
+# English-translation cache for chunks (bilingual result display).
+# ---------------------------------------------------------------------------
+def get_chunk_translation(conn: sqlite3.Connection, chunk_id: int) -> str | None:
+    row = conn.execute(
+        "SELECT en FROM chunk_translations WHERE chunk_id = ?", (chunk_id,)
+    ).fetchone()
+    return row["en"] if row else None
+
+
+def put_chunk_translation(conn: sqlite3.Connection, chunk_id: int, en: str,
+                          provider: str = "gloss") -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO chunk_translations (chunk_id, en, provider) VALUES (?,?,?)",
+        (chunk_id, en, provider),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Search log (powers trending queries in the UI).
+# ---------------------------------------------------------------------------
+def log_search(conn: sqlite3.Connection, q: str, mode: str, results: int) -> None:
+    conn.execute(
+        "INSERT INTO search_log (q, mode, results) VALUES (?,?,?)",
+        (q.strip()[:200], mode, results),
+    )
+
+
+def popular_queries(conn: sqlite3.Connection, limit: int = 8):
+    return conn.execute(
+        """SELECT q, COUNT(*) c FROM search_log
+           WHERE results > 0 AND created_at > datetime('now','-14 day')
+           GROUP BY q ORDER BY c DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
