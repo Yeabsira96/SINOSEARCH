@@ -91,6 +91,36 @@ China market**. Ask questions like:
 `gov` (policy/regulators), `business` (36kr/Huxiu/Iyiou), `ecommerce` (Taobao/JD/PDD merchant
 content), `social` (Zhihu/XHS/Weibo sentiment), `news` (state + financial portals).
 
+## Run it on your own PC (from the GitHub repo)
+
+```bash
+git clone https://github.com/<your-username>/sinosearch.git
+cd sinosearch
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Then start it (the database `sinosearch.db` is gitignored, so you build it yourself — first run takes ~2 seconds):
+
+**macOS / Linux**
+```bash
+./run.sh                           # ingests seed corpus + starts server on :8000
+```
+
+**Windows (PowerShell)** — `run.sh` doesn't work on Windows, run these two lines instead:
+```powershell
+python -m sinosearch.seed_ingest   # builds the local index from seed_data/
+python -m uvicorn sinosearch.server:app --port 8000
+```
+
+Open **http://localhost:8000** in your browser and try:
+*"How can a foreign brand enter the Chinese market?"* or *"coffee market saturation in China"*.
+
+> Note: out of the box everything runs **offline** (no API key needed) using hash embeddings
+> and extractive answers. Set `OPENAI_API_KEY` + the `SINO_*_PROVIDER` env vars below for
+> real semantic search, translation, and synthesized English answers.
+
 ## Quickstart
 
 ```bash
