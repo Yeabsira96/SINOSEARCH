@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 from .config import settings
-from .db import init_db, tx, insert_doc, insert_chunks, store_vector
+from .db import init_db, tx, insert_doc, insert_chunks, fts_upsert, store_vector
 from .embed import embed_texts
 from .normalize import html_to_text, tokenize, chunk_text, body_hash
 
 
 def ingest_html(url: str, html: str, *, source_name: str = "",
                 published: str = "", lang: str = "zh", domain: str = "") -> int:
-    """Normalize -> chunk -> FTS index -> embed. Returns #chunks added (0 if doc unchanged)."""
+    """Normalize -> chunk -> FTS index -> embed. Returns #chunks added (0 if doc unchanged).
+
+    Storage split (see db.insert_chunks): the `chunks` table keeps the ORIGINAL text
+    (for display/snippets); `chunks_fts` keeps the CJK-tokenized form (for BM25).
+    """
     title, text = html_to_text(html)
     if not text.strip():
         return 0
@@ -24,8 +28,9 @@ def ingest_html(url: str, html: str, *, source_name: str = "",
         if doc_id is None:
             return 0
         raw_chunks = chunk_text(text)
-        tok_chunks = [tokenize(c) for c in raw_chunks]
-        ids = insert_chunks(conn, doc_id, tok_chunks)
+        ids = insert_chunks(conn, doc_id, raw_chunks)
+        for cid, tok in zip(ids, (tokenize(c) for c in raw_chunks)):
+            fts_upsert(conn, cid, tok)
         vecs = embed_texts(raw_chunks)
         for cid, v in zip(ids, vecs):
             store_vector(conn, cid, v)
@@ -39,13 +44,14 @@ def reindex_all() -> int:
         rows = conn.execute("SELECT id, body FROM docs").fetchall()
     for r in rows:
         raw_chunks = chunk_text(r["body"])
-        tok_chunks = [tokenize(c) for c in raw_chunks]
         with tx() as conn:
-            conn.execute("DELETE FROM chunks WHERE doc_id=?", (r["id"],))
             conn.execute(
                 "DELETE FROM chunks_fts WHERE chunk_id IN"
                 " (SELECT id FROM chunks WHERE doc_id=?)", (r["id"],))
-            ids = insert_chunks(conn, r["id"], tok_chunks)
+            conn.execute("DELETE FROM chunks WHERE doc_id=?", (r["id"],))
+            ids = insert_chunks(conn, r["id"], raw_chunks)
+            for cid, tok in zip(ids, (tokenize(c) for c in raw_chunks)):
+                fts_upsert(conn, cid, tok)
             vecs = embed_texts(raw_chunks)
             for cid, v in zip(ids, vecs):
                 store_vector(conn, cid, v)

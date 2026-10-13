@@ -100,27 +100,25 @@ def insert_doc(conn: sqlite3.Connection, *, url: str, title: str, domain: str,
 
 
 def insert_chunks(conn: sqlite3.Connection, doc_id: int,
-                  tokenized_texts: list[str]) -> list[int]:
+                  raw_texts: list[str]) -> list[int]:
+    """Store ORIGINAL chunk text (for display). BM25 tokens live in chunks_fts
+    — call fts_upsert() per chunk id after this."""
     ids: list[int] = []
-    for ord_, tok in enumerate(tokenized_texts):
+    for ord_, txt in enumerate(raw_texts):
         cur = conn.execute(
             "INSERT INTO chunks (doc_id, ord, text) VALUES (?,?,?)",
-            (doc_id, ord_, tok),
+            (doc_id, ord_, txt),
         )
-        cid = cur.lastrowid
-        raw_text = _chunk_raw(conn, cid)
-        conn.execute(
-            "INSERT INTO chunks_fts (content, chunk_id) VALUES (?,?)",
-            (tok, cid),
-        )
-        del raw_text
-        ids.append(cid)
+        ids.append(cur.lastrowid)
     return ids
 
 
-def _chunk_raw(conn: sqlite3.Connection, chunk_id: int) -> str:
-    r = conn.execute("SELECT text FROM chunks WHERE id=?", (chunk_id,)).fetchone()
-    return r["text"] if r else ""
+def fts_upsert(conn: sqlite3.Connection, chunk_id: int, tokenized: str) -> None:
+    """Insert the CJK-tokenized form of a chunk into the BM25 lane."""
+    conn.execute(
+        "INSERT OR REPLACE INTO chunks_fts (rowid, content, chunk_id) VALUES (?,?,?)",
+        (chunk_id, tokenized, chunk_id),
+    )
 
 
 def store_vector(conn: sqlite3.Connection, chunk_id: int, vec: list[float]) -> None:
