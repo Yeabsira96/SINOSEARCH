@@ -60,34 +60,97 @@ and prefer official APIs (Weibo open API, gov data portals) where they exist. So
 ```
 sinosearch/
   config.py          # settings (env-driven)
-  db.py              # SQLite schema: docs, chunks, crawl queue
-  crawler.py         # polite incremental crawler for CN sources
+  db.py              # SQLite schema: docs, chunks, FTS5, vectors, crawl queue
+  sources.py         # curated registry of top CN sites (gov/business/social/news/ecommerce)
+  crawler.py         # polite incremental crawler (robots.txt, per-domain rate limit)
   normalize.py       # HTML -> clean text, CJK-aware chunking, dedupe
-  translate.py       # EN<->ZH machine translation (pluggable providers)
-  embed.py           # multilingual embeddings (local HF or OpenAI)
+  translate.py       # EN<->ZH machine translation (pluggable providers + business glossary)
+  embed.py           # multilingual embeddings (hash offline / local HF / OpenAI)
   index.py           # hybrid search: FTS5 BM25 + vector cosine, RRF fusion
   answer.py          # RAG synthesis with citations
-  server.py          # FastAPI app: /search, /answer, static UI
+  ingest.py          # html -> chunks -> fts -> vectors
+  seed_ingest.py     # load seed_data/*.html demo corpus
+  cli.py             # query / --answer / --crawl / --list-sources
+  server.py          # FastAPI app: /api/search, /api/answer, /api/stats, static UI
 static/index.html    # minimal web UI
 seed_data/*.html     # offline demo corpus (simulated scraped CN pages)
 tests/test_pipeline.py
 run.sh               # ingest seed data + launch server
 ```
 
+## Focus: market-expansion research
+
+This build is tuned for **researchers and overseas businesses evaluating entry into the
+China market**. Ask questions like:
+
+- "What are the foreign investment negative list rules?"
+- "How saturated is the coffee shop market in China?"
+- "Which e-commerce platforms do foreign beauty brands use to enter China?"
+
+`sources.py` curates the crawl targets across five categories:
+`gov` (policy/regulators), `business` (36kr/Huxiu/Iyiou), `ecommerce` (Taobao/JD/PDD merchant
+content), `social` (Zhihu/XHS/Weibo sentiment), `news` (state + financial portals).
+
 ## Quickstart
 
 ```bash
+pip install -r requirements.txt
 ./run.sh                 # ingests seed corpus, starts API on :8000
-# open http://localhost:8000  and try: "What do Chinese netizens think about EV subsidies?"
+# open http://localhost:8000  — try: "How can a foreign brand enter the Chinese market?"
 ```
 
 CLI without the server:
 
 ```bash
-python -m sinosearch.seed_ingest            # build index from seed_data/
-python -m sinosearch.cli "上海落户政策 2025"   # raw search
-python -m sinosearch.cli --answer "How do I get a Shanghai hukou?"
+python -m sinosearch.cli --list-sources            # show the curated CN site registry
+python -m sinosearch.cli --crawl --category gov --max-pages 20   # live crawl (polite)
+python -m sinosearch.cli "上海落户政策 2025"        # raw hybrid search
+python -m sinosearch.cli --answer "shanghai hukou policy for foreigners"
+python -m unittest discover -s tests               # run the pipeline test suite
 ```
+
+### Running with real AI providers (optional but recommended)
+
+The default config runs **fully offline** (hash embeddings + echo answers). To upgrade:
+
+```bash
+# Semantic search via OpenAI embeddings + real MT + synthesized English answers:
+export SINO_EMBED_PROVIDER=openai
+export SINO_TRANSLATE_PROVIDER=openai
+export SINO_LLM_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+python -m sinosearch.ingest   # or re-run seed ingest; then reindex:
+python -c "from sinosearch.ingest import reindex_all; reindex_all()"
+
+# Or free/local semantic embeddings (needs ~1GB model download):
+export SINO_EMBED_PROVIDER=hf
+pip install sentence-transformers
+```
+
+Provider matrix (all env vars prefixed `SINO_`, see `config.py`):
+
+| Env var | Offline default | Production options |
+|---|---|---|
+| `SINO_EMBED_PROVIDER` | `hash` | `hf` (text2vec-multilingual), `openai` |
+| `SINO_TRANSLATE_PROVIDER` | `noop` (glossary) | `openai` |
+| `SINO_LLM_PROVIDER` | `echo` (extractive) | `openai` |
+
+## Publishing to GitHub
+
+```bash
+git init -b main && git add .
+git commit -m "SinoSearch MVP: cross-lingual China search + RAG answers"
+gh repo create sinosearch --public --source=. --push   # or create on github.com, then:
+git remote add origin https://github.com/<you>/sinosearch.git && git push -u origin main
+```
+
+Notes: `.gitignore` excludes `*.db` and caches — users rebuild the index with
+`python -m sinosearch.seed_ingest`. Never commit `OPENAI_API_KEY`; everything is env-driven.
+Optional deploy: Railway/Render/Fly.io with start command `uvicorn sinosearch.server:app
+--host 0.0.0.0 --port $PORT`.
+
+⚠️ Legal/ops: keep the crawler polite (it honors robots.txt and rate-limits); Weibo/Zhihu/XHS
+frequently block anonymous scraping — treat them as stretch goals or license data later.
 
 ## Roadmap (what we build next, in order)
 

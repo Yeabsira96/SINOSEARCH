@@ -87,8 +87,9 @@ def bm25_search(query_zh: str, k: int) -> list[tuple[int, float]]:
         return []
     match = " AND ".join(groups)
     if should:
-        # latin leftovers are a bonus signal, not a requirement (FTS5 NEAR syntax)
-        match += " AND NEAR/" + str(len(should) + 8) + " " + " ".join(should)
+        # SQLite FTS5's NEAR/ syntax is unsupported in many builds; treat latin
+        # leftovers as an OR bonus so they widen recall without hard-requiring.
+        match = "(" + match + ") OR (" + " OR ".join(should) + ")"
     with tx() as conn:
         rows = conn.execute(
             """SELECT chunk_id, bm25(chunks_fts) AS s

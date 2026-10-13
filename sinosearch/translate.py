@@ -19,6 +19,18 @@ _DEMO_EN2ZH = {
     "coffee": "咖啡", "tea": "茶", "startup": "创业", "market": "市场",
     "policy": "政策", "regulation": "法规", "foreigner": "外国人",
     "rent": "租房", "apartment": "公寓", "internet": "互联网",
+    # --- market-expansion / business-research vocabulary (EN -> ZH) ---
+    "market entry": "市场准入", "foreign investment": "外商投资",
+    "wfoe": "外商独资企业", "negative list": "负面清单",
+    "regulation": "监管", "competitor": "竞争对手", "competition": "竞争",
+    "franchise": "加盟", "ecommerce": "电商", "e-commerce": "电商",
+    "tmall": "天猫", "taobao": "淘宝", "jd": "京东", "pinduoduo": "拼多多",
+    "consumer": "消费者", "trend": "趋势", "trends": "趋势",
+    "pricing": "定价", "license": "许可", "licensing": "牌照",
+    "icp": "备案", "trademark": "商标", "distributor": "经销商",
+    "business": "商业", "company": "公司", "startup": "初创公司",
+    "funding": "融资", "investment": "投资", "retail": "零售",
+    "logistics": "物流", "tax": "税收", "brand": "品牌",
 }
 
 
